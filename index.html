@@ -34,11 +34,14 @@ h1{font:700 clamp(1.6rem,4vw,2.4rem)/1.1 "Bricolage Grotesque",system-ui,sans-se
 header p{margin:0;color:var(--muted);max-width:60ch}
 main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;max-width:1200px;margin:0 auto;padding:16px 20px 32px}
 @media (max-width:860px){main{grid-template-columns:1fr}}
-.stage{background:var(--stage);border:1px solid var(--line);border-radius:10px;min-height:340px;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto}
-.wrap{position:relative;display:none;line-height:0;max-width:100%}
-.wrap canvas{max-width:100%;height:auto;display:block;touch-action:none;cursor:crosshair;background:#fff}
-#selBox{position:absolute;border:2px dashed var(--sel);pointer-events:none;display:none}
-.drop{text-align:center;padding:40px 20px;border:2px dashed var(--line);border-radius:10px;color:var(--muted);max-width:420px}
+.work{display:flex;flex-direction:column;gap:8px;min-width:0}.tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.tools button{padding:7px 12px}.tools button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}#zl{min-width:3.6em;text-align:center;font-size:.88rem;color:var(--muted)}
+.stage{background:var(--stage);border:1px solid var(--line);border-radius:10px;min-height:340px;max-height:72vh;display:flex;padding:12px;overflow:auto}
+.wrap{position:relative;display:none;line-height:0;margin:auto;flex:none}
+.wrap canvas{display:block;touch-action:none;cursor:crosshair;background:#fff}.wrap.pan canvas{cursor:grab}.wrap.pan #selBox{pointer-events:none}
+#selBox{position:absolute;border:2px dashed var(--sel);display:none;cursor:move;touch-action:none}
+.hd{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;background:var(--sel);border:2px solid #fff;border-radius:50%;touch-action:none}
+.hd[data-h=nw]{left:0;top:0;cursor:nwse-resize}.hd[data-h=n]{left:50%;top:0;cursor:ns-resize}.hd[data-h=ne]{left:100%;top:0;cursor:nesw-resize}.hd[data-h=e]{left:100%;top:50%;cursor:ew-resize}.hd[data-h=se]{left:100%;top:100%;cursor:nwse-resize}.hd[data-h=s]{left:50%;top:100%;cursor:ns-resize}.hd[data-h=sw]{left:0;top:100%;cursor:nesw-resize}.hd[data-h=w]{left:0;top:50%;cursor:ew-resize}
+.drop{margin:auto;text-align:center;padding:40px 20px;border:2px dashed var(--line);border-radius:10px;color:var(--muted);max-width:420px}
 .drop.over{border-color:var(--accent);color:var(--ink)}
 .drop strong{display:block;font:700 1.2rem "Bricolage Grotesque",system-ui,sans-serif;color:var(--ink);margin-bottom:6px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;align-self:start}
@@ -63,6 +66,15 @@ h2{font:700 .95rem "Bricolage Grotesque",system-ui,sans-serif;margin:4px 0 0}
   <p>Importe une image, entoure un texte, remplace-le au même endroit, puis enregistre en JPG, PNG ou PDF.</p>
 </header>
 <main>
+  <div class="work">
+  <div class="tools" role="toolbar" aria-label="Zoom">
+    <button id="zOut" type="button" aria-label="Zoom arrière">−</button>
+    <span id="zl">100 %</span>
+    <button id="zIn" type="button" aria-label="Zoom avant">+</button>
+    <button id="zFit" type="button">Ajuster</button>
+    <button id="z100" type="button">100 %</button>
+    <button id="pan" type="button" aria-pressed="false">Déplacer la vue</button>
+  </div>
   <section class="stage" id="stage" aria-label="Zone de travail">
     <div class="drop" id="drop">
       <strong>Dépose une image ici</strong>
@@ -75,6 +87,7 @@ h2{font:700 .95rem "Bricolage Grotesque",system-ui,sans-serif;margin:4px 0 0}
       <div id="selBox"></div>
     </div>
   </section>
+  </div>
 
   <aside class="panel" aria-label="Réglages du texte">
     <p class="hint" id="hint">1. Importe une image. 2. Trace un rectangle autour du texte à remplacer.</p>
@@ -104,6 +117,7 @@ h2{font:700 .95rem "Bricolage Grotesque",system-ui,sans-serif;margin:4px 0 0}
         <select id="weight"><option value="400">Normal</option><option value="700">Gras</option></select>
       </label>
     </div>
+    <button id="resamp" type="button">Reprendre la couleur du fond</button>
     <label class="chk"><input type="checkbox" id="fit" checked> Réduire pour tenir dans la zone</label>
     <div class="row">
       <button class="primary" id="apply" type="button" disabled>Appliquer</button>
@@ -145,7 +159,7 @@ h2{font:700 .95rem "Bricolage Grotesque",system-ui,sans-serif;margin:4px 0 0}
       origin = copyCanvas(base); history = []; sel = null; hasImg = true;
       $("drop").style.display = "none"; $("wrap").style.display = "inline-block";
       $("hint").textContent = "Trace un rectangle autour du texte à remplacer, puis écris le nouveau texte.";
-      enable(true); render(); msg("");
+      enable(true); render(); msg(""); zoom = 1; cv.style.width = cv.style.height = ""; zoomFit();
     };
     img.onerror = function(){ msg("Impossible de lire cette image."); };
     img.src = url;
@@ -165,25 +179,41 @@ h2{font:700 .95rem "Bricolage Grotesque",system-ui,sans-serif;margin:4px 0 0}
     var r = cv.getBoundingClientRect(), k = cv.width / r.width;
     return { x: Math.max(0, Math.min(cv.width, (e.clientX - r.left) * k)), y: Math.max(0, Math.min(cv.height, (e.clientY - r.top) * k)) };
   }
+  var ptrs = {}, pinch = null, panMode = false, pdrag = null, bgManual = false;
+  function pts(){ return Object.keys(ptrs).map(function(k){ return ptrs[k]; }); }
+  function dist(){ var a = pts(); return Math.hypot(a[0].clientX - a[1].clientX, a[0].clientY - a[1].clientY) || 1; }
+  function mid(){ var a = pts(); return { x: (a[0].clientX + a[1].clientX) / 2, y: (a[0].clientY + a[1].clientY) / 2 }; }
+  function normSel(){ sel = { x: Math.round(sel.x), y: Math.round(sel.y), w: Math.round(sel.w), h: Math.round(sel.h) }; }
+  function autoColors(full){
+    var c = sampleBg(sel);
+    if(!bgManual) $("bg").value = hex(c);
+    if(full){ $("fg").value = lum(c) > 140 ? "#111111" : "#FFFFFF"; $("size").value = Math.max(8, Math.round(sel.h * 0.7)); }
+  }
   cv.addEventListener("pointerdown", function(e){
-    if(!hasImg) return; cv.setPointerCapture(e.pointerId); dragging = pos(e);
+    if(!hasImg) return; cv.setPointerCapture(e.pointerId); ptrs[e.pointerId] = e;
+    if(Object.keys(ptrs).length === 2){ dragging = null; pdrag = null; pinch = { d: dist(), z: zoom }; return; }
+    if(panMode){ pdrag = { x: e.clientX, y: e.clientY, l: st.scrollLeft, t: st.scrollTop }; return; }
+    dragging = pos(e);
   });
   cv.addEventListener("pointermove", function(e){
+    if(ptrs[e.pointerId]) ptrs[e.pointerId] = e;
+    if(pinch){ var m = mid(); setZoom(pinch.z * dist() / pinch.d, m.x, m.y); return; }
+    if(pdrag){ st.scrollLeft = pdrag.l - (e.clientX - pdrag.x); st.scrollTop = pdrag.t - (e.clientY - pdrag.y); return; }
     if(!dragging) return; var p = pos(e);
     sel = { x: Math.min(dragging.x,p.x), y: Math.min(dragging.y,p.y), w: Math.abs(p.x-dragging.x), h: Math.abs(p.y-dragging.y) };
     drawSelBox();
   });
-  cv.addEventListener("pointerup", function(){
+  function endPtr(e){
+    delete ptrs[e.pointerId];
+    if(pinch){ if(Object.keys(ptrs).length < 2) pinch = null; return; }
+    pdrag = null;
     if(!dragging) return; dragging = null;
     if(!sel || sel.w < 6 || sel.h < 6){ sel = null; drawSelBox(); render(); return; }
-    sel = { x: Math.round(sel.x), y: Math.round(sel.y), w: Math.round(sel.w), h: Math.round(sel.h) };
-    var c = sampleBg(sel);
-    $("bg").value = hex(c);
-    $("fg").value = lum(c) > 140 ? "#111111" : "#FFFFFF";
-    $("size").value = Math.max(8, Math.round(sel.h * 0.7));
+    normSel(); bgManual = false; autoColors(true);
     $("txt").focus(); drawSelBox(); render();
-    msg("Zone choisie. Écris le nouveau texte, puis clique sur Appliquer.");
-  });
+    msg("Zone choisie. Ajuste-la avec les poignées, écris le nouveau texte, puis clique sur Appliquer.");
+  }
+  cv.addEventListener("pointerup", endPtr); cv.addEventListener("pointercancel", endPtr);
   function drawSelBox(){
     var b = $("selBox");
     if(!sel){ b.style.display = "none"; return; }
@@ -296,6 +326,65 @@ h2{font:700 .95rem "Bricolage Grotesque",system-ui,sans-serif;margin:4px 0 0}
   if(window.claude && claude.use){
     claude.use("downloads").then(function(d){ downloads = d; }).catch(function(){});
   }
+  /* ---------- Déplacer / redimensionner la zone ---------- */
+  var box = $("selBox"), boxDrag = null;
+  ["nw","n","ne","e","se","s","sw","w"].forEach(function(h){
+    var d = document.createElement("div"); d.className = "hd"; d.dataset.h = h; box.appendChild(d);
+  });
+  box.addEventListener("pointerdown", function(e){
+    if(!sel) return; e.preventDefault(); box.setPointerCapture(e.pointerId);
+    boxDrag = { h: e.target.dataset.h || "move", p: pos(e), s: { x: sel.x, y: sel.y, w: sel.w, h: sel.h } };
+  });
+  box.addEventListener("pointermove", function(e){
+    if(!boxDrag) return;
+    var p = pos(e), dx = p.x - boxDrag.p.x, dy = p.y - boxDrag.p.y, s = boxDrag.s, h = boxDrag.h;
+    var x1 = s.x, y1 = s.y, x2 = s.x + s.w, y2 = s.y + s.h, W = cv.width, H = cv.height;
+    if(h === "move"){
+      dx = Math.max(-x1, Math.min(W - x2, dx)); dy = Math.max(-y1, Math.min(H - y2, dy));
+      x1 += dx; x2 += dx; y1 += dy; y2 += dy;
+    } else {
+      if(h.indexOf("w") > -1) x1 = Math.max(0, Math.min(x2 - 6, x1 + dx));
+      if(h.indexOf("e") > -1) x2 = Math.min(W, Math.max(x1 + 6, x2 + dx));
+      if(h.indexOf("n") > -1) y1 = Math.max(0, Math.min(y2 - 6, y1 + dy));
+      if(h.indexOf("s") > -1) y2 = Math.min(H, Math.max(y1 + 6, y2 + dy));
+    }
+    sel = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 }; drawSelBox(); render();
+  });
+  function boxEnd(){ if(!boxDrag) return; boxDrag = null; normSel(); autoColors(false); drawSelBox(); render(); }
+  box.addEventListener("pointerup", boxEnd); box.addEventListener("pointercancel", boxEnd);
+  $("bg").addEventListener("input", function(){ bgManual = true; });
+  $("resamp").onclick = function(){ if(!sel){ msg("Trace d’abord une zone."); return; } bgManual = false; autoColors(false); render(); };
+
+  /* ---------- Zoom ---------- */
+  var zoom = 1;
+  function zoomFit(){
+    var w = (st.clientWidth - 26) / cv.width, h = (Math.min(window.innerHeight * 0.72, 760) - 26) / cv.height;
+    setZoom(Math.min(w, h, 4));
+  }
+  function setZoom(nz, cx, cy){
+    if(!hasImg) return;
+    nz = Math.max(0.05, Math.min(8, nz));
+    var r = cv.getBoundingClientRect(), sr = st.getBoundingClientRect();
+    if(cx == null){ cx = sr.left + sr.width / 2; cy = sr.top + sr.height / 2; }
+    var ix = (cx - r.left) / zoom, iy = (cy - r.top) / zoom;
+    zoom = nz; cv.style.width = cv.width * zoom + "px"; cv.style.height = cv.height * zoom + "px";
+    var r2 = cv.getBoundingClientRect();
+    st.scrollLeft += r2.left + ix * zoom - cx; st.scrollTop += r2.top + iy * zoom - cy;
+    $("zl").textContent = Math.round(zoom * 100) + " %";
+  }
+  $("zIn").onclick = function(){ setZoom(zoom * 1.25); };
+  $("zOut").onclick = function(){ setZoom(zoom / 1.25); };
+  $("zFit").onclick = zoomFit;
+  $("z100").onclick = function(){ setZoom(1); };
+  $("pan").onclick = function(){
+    panMode = !panMode; $("wrap").classList.toggle("pan", panMode);
+    $("pan").classList.toggle("on", panMode); $("pan").setAttribute("aria-pressed", panMode);
+  };
+  st.addEventListener("wheel", function(e){
+    if(!hasImg || !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault(); setZoom(zoom * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+  }, { passive: false });
+
   enable(false);
 })();
 </script>
